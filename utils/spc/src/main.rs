@@ -1,17 +1,54 @@
+use std::collections::HashMap;
 use std::string::{String, FromUtf8Error};
 use std::process::Command;
+use serde::{Deserialize, Serialize};
+use reqwest;
+use tokio;
+use dotenv;
 
-const MEDIA_PLAYER: &str = "/org/mpris/MediaPlayer2";
+/// expected response for our authorization token
+#[derive(Serialize, Deserialize, Debug)]
+struct AuthToken {
+    access_token: String,
+    token_type: String,
+    expires_in: i32
+}
 
-//struct Device {
-//    id: String,
-//    is_active: bool,
-//    is_private_session: bool,
-//    is_restricted: false,
-//    name: String,
-//    type: String,
-//    volume_percent: i16
-//}
+/// expected structure of a device retrieved from
+/// Spotify API
+#[derive(Serialize, Deserialize, Debug)]
+struct Device {
+    id: String,
+    is_active: bool,
+    is_private_session: bool,
+    is_restricted: bool,
+    name: String, 
+    #[serde(rename = "type")]
+    kind: String,
+    volume_percent: i16
+}
+
+/// retreives/returns a Spotify authorization token
+async fn sp_token() -> Result<AuthToken, reqwest::Error> {
+    let client_id: String = dotenv::var("CLIENT_ID").unwrap();
+    let client_secret: String = dotenv::var("CLIENT_SECRET").unwrap();
+
+    let mut params = HashMap::new();
+
+    // form encoded params for request
+    params.insert("grant_type", "client_credentials");
+    params.insert("client_id", &client_id);
+    params.insert("client_secret", &client_secret);
+
+    let client = reqwest::Client::new();
+
+    client.post("https://accounts.spotify.com/api/token")
+          .form(&params)
+          .send()
+          .await?
+          .json::<AuthToken>()
+          .await
+}
 
 /// returns spotifyd process ID
 fn sp_pid() -> String {
@@ -39,6 +76,8 @@ fn sp_thing(uri: &str) -> String {
     format!("string:spotify:{uri}")
 }
 
+/// sends a dbus messaage and returns the output
+/// result of the command
 fn dbus_message(instance: &str,
                 method_uri: &str,
                 thing: &str) -> Result<String, FromUtf8Error> {
@@ -46,7 +85,7 @@ fn dbus_message(instance: &str,
         Command::new("dbus-send")
             .arg("--print-reply")
             .arg(format!("--dest={instance}"))
-            .arg(MEDIA_PLAYER)
+            .arg("/org/mpris/MediaPlayer2")
             .arg(method_uri)
             .arg(thing.clone())
             .output()
@@ -55,18 +94,10 @@ fn dbus_message(instance: &str,
     )
 }
 
-//fn sp_devices() -> Vec<Device> {}
-//fn sp_start(deviceId: &str) -> &str {}
-
-fn main() {
-    let pid: String = sp_pid();
-    let instance: String = sp_instance(pid.trim());
-    let method_uri: String = sp_player("OpenUri");
-    let thing: String = sp_thing("playlist:37i9dQZF1EpfWzY4TEI80Y");
-    
-
-    match dbus_message(instance.trim(), method_uri.trim(), thing.trim()) {
-        Ok(str) => println!("{str:?}"),
-        Err(e) => println!("{e:?}")
-    };
+#[tokio::main]
+async fn main() {
+    match sp_token().await {
+        Ok(atkn) => println!("{:#?}", atkn),
+        Err(err) => println!("{:#?}", err)
+    }
 }
