@@ -28,6 +28,11 @@ struct Device {
     volume_percent: i16
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct Devices {
+    devices: Vec<Device>
+}
+
 /// retreives/returns a Spotify authorization token
 async fn sp_token() -> Result<AuthToken, reqwest::Error> {
     let client_id: String = dotenv::var("CLIENT_ID").unwrap();
@@ -48,6 +53,19 @@ async fn sp_token() -> Result<AuthToken, reqwest::Error> {
           .await?
           .json::<AuthToken>()
           .await
+}
+
+/// returns a future that resolves to a vector of available
+/// devices or an error
+async fn sp_devices(access_token: &str) -> Result<Devices, reqwest::Error> {
+    let client = reqwest::Client::new();
+
+    client.get("https://api.spotify.com/v1/me/player/devices")
+        .bearer_auth(access_token)
+        .send()
+        .await?
+        .json::<Devices>()
+        .await
 }
 
 /// returns spotifyd process ID
@@ -97,7 +115,14 @@ fn dbus_message(instance: &str,
 #[tokio::main]
 async fn main() {
     match sp_token().await {
-        Ok(atkn) => println!("{:#?}", atkn),
+        Ok(atkn) => {
+            match sp_devices(&atkn.access_token).await {
+                Ok(dvs) => {
+                    println!("{:#?}", dvs)
+                },
+                Err(err) => println!("{:#?}", err)
+            }
+        },
         Err(err) => println!("{:#?}", err)
     }
 }
